@@ -1,0 +1,79 @@
+---
+title: "Chess Exploratory Analysis"
+author: "Hannah Haley"
+date: "2024-12-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#####prepping all my libraries
+library(readr) ### to read data
+library(stringr) 
+library(dplyr)
+library(tm) # to remove punctuation 
+####
+library(caret) ##train the model
+library(MASS)
+### for visuals
+library(ggplot2)
+library(paletteer)  # For color palettes
+```
+
+```{r}
+###to view the head of the dataset to understand better what we're working with
+chess_base <- read_csv("~/Life/Jobs/Projects/Analysis-on-Chess/chess_games.csv")
+head(chess_base)
+summary(chess_base)
+```
+This provides visibility into the data, alongside with a summary of each column within the dataset.
+
+```{r}
+###want to split result into two columns so we know whether black or white was the winner of the game
+white_players=as.data.frame(chess_base$White)
+colnames(white_players)[1]="players"
+black_players=as.data.frame(chess_base$Black)
+colnames(black_players)[1]="players"
+rbind(white_players,black_players)
+players=as.data.frame(unique(chess_base$White))
+```
+```{r}
+###get the total unique chess players
+dim(players)
+```
+There are a total of 118,945 unique chess players in this dataset. 
+
+```{r}
+### what is the most common chess opening move?
+openings_plot=chess_base %>% group_by(Opening) %>% 
+    summarize(count=n())%>%arrange(desc(count))
+
+head(openings_plot)
+```
+
+## R Markdown
+```{r}
+# Plot
+ggplot(openings_plot, aes(x = count, y = reorder(Opening, count), fill = Opening)) +
+  geom_bar(stat = "identity") +  # Horizontal bar chart
+  theme_minimal() +              # Clean theme
+  scale_fill_paletteer_d("ggsci::default_gsea") + # Updated color scheme
+  scale_x_continuous(breaks = seq(0, max(openings_plot$count, na.rm = TRUE), by = 50000)) + # X-axis intervals of 50,000
+  labs(
+    title = "Chess Openings Frequency",
+    x = "Count",
+    y = "Chess Openings",
+    fill = "Opening Name"
+  ) +
+  theme(
+    legend.position = "right",            # Legend on the right
+    axis.text.y = element_text(size = 8), # Adjust Y-axis label size
+    legend.key.size = unit(0.5, "cm")     # Adjust legend size
+  )
+
+```
+Van't Kruijs Opening (e.3) is the highest first move, followed by Scandinavian Defense: Mieses-Kotoc Variation (appears on the board and follows these movements: e4 d5. exd5 Qxd5. Nc3 Qa5.)
+
+```{r}
+
+```
