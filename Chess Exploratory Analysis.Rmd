@@ -6,21 +6,27 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 #####prepping all my libraries
 library(readr) ### to read data
 library(stringr) 
+library(tidyr)
+##train the model aka machine learning libraries
 library(dplyr)
-library(tm) # to remove punctuation 
-####
-library(caret) ##train the model
+library(caret)
+library(tidymodels)
 library(MASS)
+library(nnet)
+library(rsample)  ### svr split
+library(e1071)    #### svr
+library(yardstick) # For classification metrics
 ### for visuals
 library(ggplot2)
-library(paletteer)  # For color palettes
+library(paletteer)  ###for color palettes
 ```
 
-```{r}
+The purpose of this analysis is to determine if there is a difference in playing a game of chess as Black or White, as that is an option you can select on chess.com.
+```{r, echo = FALSE}
 ###to view the head of the dataset to understand better what we're working with
 chess_base <- read_csv("~/Life/Jobs/Projects/Analysis-on-Chess/chess_games.csv")
 head(chess_base)
@@ -28,39 +34,39 @@ summary(chess_base)
 ```
 This provides visibility into the data, alongside with a summary of each column within the dataset.
 
-```{r}
+```{r, echo = FALSE}
 ###want to split result into two columns so we know whether black or white was the winner of the game
-white_players=as.data.frame(chess_base$White)
+white_players=as.data.frame(chess_base$white_id)
 colnames(white_players)[1]="players"
-black_players=as.data.frame(chess_base$Black)
+black_players=as.data.frame(chess_base$black_id)
 colnames(black_players)[1]="players"
 rbind(white_players,black_players)
-players=as.data.frame(unique(chess_base$White))
+players=as.data.frame(unique(chess_base$white_id))
 ```
-```{r}
+```{r, echo = FALSE}
 ###get the total unique chess players
 dim(players)
 ```
-There are a total of 118,945 unique chess players in this dataset. 
+There are a total of 9438 unique chess players in this dataset. 
 
-```{r}
+```{r, echo = FALSE}
 ### what is the most common chess opening move?
-openings_plot=chess_base %>% group_by(Opening) %>% 
-    summarize(count=n())%>%arrange(desc(count))
+openings_plot=chess_base %>% group_by(opening_fullname) %>% 
+    summarize(count=n())%>%arrange(desc(count)) %>%
+  slice_head(n = 10)
 
+openings_plot_gg<- openings_plot
 head(openings_plot)
-```
 
-## R Markdown
-```{r}
-# Plot
-ggplot(openings_plot, aes(x = count, y = reorder(Opening, count), fill = Opening)) +
+```
+```{r, echo = FALSE}
+ggplot(openings_plot_gg, aes(x = count, y = reorder(opening_fullname, count), fill = opening_fullname)) +
   geom_bar(stat = "identity") +  # Horizontal bar chart
   theme_minimal() +              # Clean theme
   scale_fill_paletteer_d("ggsci::default_gsea") + # Updated color scheme
   scale_x_continuous(breaks = seq(0, max(openings_plot$count, na.rm = TRUE), by = 50000)) + # X-axis intervals of 50,000
   labs(
-    title = "Chess Openings Frequency",
+    title = "Top 10 Openings Frequency",
     x = "Count",
     y = "Chess Openings",
     fill = "Opening Name"
@@ -72,8 +78,214 @@ ggplot(openings_plot, aes(x = count, y = reorder(Opening, count), fill = Opening
   )
 
 ```
-Van't Kruijs Opening (e.3) is the highest first move, followed by Scandinavian Defense: Mieses-Kotoc Variation (appears on the board and follows these movements: e4 d5. exd5 Qxd5. Nc3 Qa5.)
 
-```{r}
+Van't Kruijs Opening (e.3) is the highest first move, followed by Sicilian Defense.
+
+
+Now let's see if playing beginning the game as White or Black has an impact on the winning results.
+
+```{r, echo = FALSE}
+###now let's see if playing black or white makes a difference in the games' outcome
+counts=chess_base %>% group_by(winner) %>% summarize(count=n()) %>% arrange(desc(count))
+
+ggplot(counts, aes(x=winner, y=count, fill=winner))+geom_bar(stat="identity")+labs(title="Does Playing As Black or White Impact Game Outcome?") + scale_fill_manual(values = c("Black" = "#009292", "Draw" = "#FFAC75", "White" = "pink")) 
+```
+Now that we know playing as White has a higher likelihood of winning, let's see if these winning outcomes are mainly by Checkmate (considered "Normal" in this dataset), abandonment, time forfeit, etc.
+
+```{r, echo = FALSE}
+victory_type=chess_base %>% group_by(victory_status) %>% summarize(count=n())
+
+
+ggplot(victory_type, aes(x=victory_status, y=count, fill=victory_status))+geom_bar(stat="identity")+labs(title="What Is The Most Common Game Outcome?")+
+  scale_fill_manual(values=c("#FFAC75",
+                             "#009292",
+                             "darkblue",
+                             "#6B990F","pink"))
+```
+
+```{r, echo = FALSE}
+white=chess_base %>% filter(winner =='White') %>% 
+    mutate(difference_in_ratings=white_rating-black_rating)
+
+mean(white$difference_in_ratings)
 
 ```
+And finally, on average the difference in ratings between Black and White where White wins is about 95 games. Let's see the difference for Black.
+
+```{r, echo = FALSE}
+black=chess_base %>% filter(winner=='Black') %>% 
+    mutate(difference_in_ratings=black_rating-white_rating)
+
+mean(black$difference_in_ratings)
+
+```
+In the cases where Black has the higher rating, they are on average winning 89 games. Maybe time to start those chess games playing as white?
+```{r, echo = FALSE}
+white_winners=chess_base %>% filter(winner =='White')
+
+
+white_winners_count=white_winners %>% group_by(opening_fullname) %>% summarize(count=n()) %>% arrange(-count) %>% slice_max(order_by = count, n = 5)
+
+ggplot(white_winners_count, aes(x=opening_fullname, y=count)) +
+  geom_segment( aes(x=opening_fullname, xend=opening_fullname, y=0, yend=count), color="skyblue") +
+  geom_point( color="#009292", size=4, alpha=0.6) +
+  theme_light() +
+  coord_flip() +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank()
+  )+labs(title="White's Winning Top 5 Opening Moves")
+```
+Now let's see what Black's winning opening moves are:
+
+```{r, echo = FALSE}
+black_winners=chess_base %>% filter(winner =='Black')
+
+
+black_winners_count=black_winners %>% group_by(opening_fullname) %>% summarize(count=n()) %>% arrange(-count) %>% slice_max(order_by = count, n = 5)
+
+ggplot(black_winners_count, aes(x=opening_fullname, y=count)) +
+  geom_segment( aes(x=opening_fullname, xend=opening_fullname, y=0, yend=count), color="skyblue") +
+  geom_point( color="#6B990F", size=4, alpha=0.6) +
+  theme_light() +
+  coord_flip() +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank()
+  )+labs(title="Black's Winning Top 5 Opening Moves")
+```
+
+```{r, echo = FALSE}
+chess_games <- chess_base %>%
+  mutate(rating_difference = white_rating - black_rating)
+chess_games <- chess_games[c("winner", "turns", "rating_difference","time_increment")]
+str(chess_games)
+
+```
+```{r, echo = FALSE}
+cor(chess_games[, 2:3])
+```
+The correlation shows that each variable is perfectly correlated with itself. For example, White's ratings have a linear relationship with Black's ratings among different players. Alongside, the correlation between players' turns and rating differences are basically nonexistent, meaning that the players' ratings has nothing to do with the amount of turns they make in a game. 
+
+```{r, echo = FALSE}
+set.seed(2345)
+m1_split <- initial_split(chess_games, prop = 0.20)
+
+m1_train <- training(ChessData_split)
+m1_test <- testing(ChessData_split)
+```
+
+```{r, echo = FALSE}
+m1_train$winner <- relevel(as.factor(ChessData_train$winner), ref = "White")
+
+chess.model <- multinom(winner ~ rating_difference + turns, data = m1_train)
+```
+```{r, echo = FALSE}
+tidy(chess.model) %>%
+    knitr::kable(digits = 4, format = "markdown")
+```
+For each winning variable in this output, we have the following:
+      1. Black's p-value of ~0.0221 for *turns* and p-value  of ~0.0 for *rating_difference*, this means that there is not a significant prediction for turns but there is with rating differences.
+      2. Both of Draw's p-values are ~0.0, meaning they both have significant predictions in the outcome of the game.
+
+```{r, echo = FALSE}
+m1_train$winnerPredicted <- predict(chess.model, newdata = m1_train,
+    "class")
+
+# Classification table
+train_table <- table(m1_train$winner, m1_train$winnerPredicted)
+train_table
+```
+
+```{r, echo = FALSE}
+####accruracy
+sum(train_table["White", "White"], train_table["Black", "Black"], train_table["Draw",
+    "Draw"])/sum(train_table) * 100
+```
+
+The accuracy of the training model is 62.85%
+```{r, echo = FALSE}
+m1_test$winnerPredicted <- predict(chess.model, newdata = m1_test,
+    "class")
+
+# Classification table
+test_table <- table(m1_test$winner, m1_test$winnerPredicted)
+test_table
+```
+```{r, echo = FALSE}
+sum(test_table["White", "White"], test_table["Black", "Black"], test_table["Draw",
+    "Draw"])/sum(test_table) * 100
+```
+The accuracy of the testing model is 62.25%
+
+
+In conclusion of this regression model confirms that by either playing chess as White or Black does not have a linear relationship with each other.  Do not let this discourage you from playing a game of chess, as the outcome is entirely dependent on who you are playing against, not who you're playing as. 
+
+
+But let's see if a different machine learning model says the same. The next model to predict the outcome of the game is the Support Vector Classification Model.
+```{r, echo = FALSE}
+### in order to use the svr model, we want all continuous variables so we will do some data manipulation for the winner column
+chess_games <- chess_games %>%
+  mutate(winner_numeric = case_when(
+    winner == "White" ~ 1,
+    winner == "Black" ~ 2,
+    winner == "Draw"  ~ 0,
+    TRUE ~ NA_real_ # Handles unexpected cases, if any
+  ))
+```
+So you could understand the SVR results better, I have assigned the winner column as the following three classes: 0 (draw), 1 (White wins), and 2 (Black wins).
+
+```{r, echo = FALSE}
+### set seed for consistency
+set.seed(2345)
+
+# 80/20 split
+m2_split <- initial_split(chess_games, prop = 0.20)
+m2_train <- training(m2_split)
+m2_test <- testing(m2_split)
+
+### fitting the svr
+svr_model <- svm(
+  winner_numeric ~ rating_difference + turns,  # Formula: Predict 'turns' using 'Rating_Difference'
+  data = m2_train,           # Training data
+  type = "C-classification",   #classification
+  kernel = "radial",         # Radial Basis Function (RBF) kernel
+  cost = 1,                  # Cost parameter (default: 1)
+)
+
+### summarize the svr model
+summary(svr_model)
+
+### predict the testing model
+m2_test$predictions <- predict(svr_model, newdata = m2_test)
+
+### Analyzing performance
+conf_matrix <- table(m2_test$winner_numeric, m2_test$predictions)
+
+# Calculate Accuracy
+accuracy_value <- sum(diag(conf_matrix)) / sum(conf_matrix)
+
+# Display Confusion Matrix and Accuracy
+cat("Confusion Matrix:\n")
+print(conf_matrix)
+cat("\nAccuracy:", accuracy_value, "\n")
+
+```
+The confusion matrix summarizes the model's predictions versus the actual outcomes for the test set:
+1. Rows represent actual classes.
+2. Columns represent predicted classes.
+
+True Positives (diagonal):
+
+Class 0: None of the actual draws (0) were predicted correctly.
+Class 1: 5867 instances were correctly classified as 1 (White wins).
+Class 2: 4111 instances were correctly classified as 2 (Black wins).
+
+The SV model has an accuracy of ~62.18%, meaning that only ~62% of the model was predicted correctly. 
+
+In conclusion of this Chess Exploratory Analysis:
+1. The Support Vector model confirms that White has a statistical advantage, likely due White having the first move
+2. The Support Vector Model also reveals that Black has a strong chance of winning, but success is harder to predict based on the available features.
+3. Both regression and classification models have an accuracy of ~62%, meaning there is 40% of the data unaccounted for that could help predict the game outcome.
