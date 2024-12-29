@@ -34,7 +34,7 @@ summary(chess_base)
 ```
 This provides visibility into the data, alongside with a summary of each column within the dataset.
 
-```{r, echo = FALSE}
+```{r, echo = FALSE,results = "hide"}
 ###want to split result into two columns so we know whether black or white was the winner of the game
 white_players=as.data.frame(chess_base$white_id)
 colnames(white_players)[1]="players"
@@ -173,12 +173,12 @@ The correlation shows that each variable is perfectly correlated with itself. Fo
 set.seed(2345)
 m1_split <- initial_split(chess_games, prop = 0.20)
 
-m1_train <- training(ChessData_split)
-m1_test <- testing(ChessData_split)
+m1_train <- training(m1_split)
+m1_test <- testing(m1_split)
 ```
 
 ```{r, echo = FALSE}
-m1_train$winner <- relevel(as.factor(ChessData_train$winner), ref = "White")
+m1_train$winner <- relevel(as.factor(m1_train$winner), ref = "White")
 
 chess.model <- multinom(winner ~ rating_difference + turns, data = m1_train)
 ```
